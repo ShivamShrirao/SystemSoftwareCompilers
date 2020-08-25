@@ -76,10 +76,12 @@ public class pass1 {
         BufferedReader codeReader = new BufferedReader(new FileReader("assembly.txt"));
         BufferedWriter interWriter = new BufferedWriter(new FileWriter("intermediate.txt"));
 
-        HashMap<String, Symbol> SYMTAB = new HashMap<String, Symbol>();
-        HashMap<String, Integer> LITAB = new HashMap<String, Integer>();
+        HashMap<String, Symbol> SYMTAB = new HashMap<>();
+        HashMap<String, Integer> LITAB = new HashMap<>();
         ArrayList<HashMap<String, Integer>> LPs= new ArrayList<>();
-        int loc_cntr=0, symIdx=0, litIdx=0, conIdx=0;
+        ArrayList<Integer> POOLTAB = new ArrayList<>();
+        POOLTAB.add(1);
+        int loc_cntr=0, symIdx=0, litIdx=0;
         String currentLine;
         while ((currentLine = codeReader.readLine()) != null) {
             loc_cntr++;
@@ -176,6 +178,7 @@ public class pass1 {
                                     }
                                 }
                                 LPs.add(LITAB);
+                                POOLTAB.add(litIdx+1);
                                 LITAB = new HashMap<String, Integer>();
                             }
                             case "EQU" -> {
@@ -192,6 +195,7 @@ public class pass1 {
                 }
             }
         }
+        POOLTAB.remove(POOLTAB.size()-1);
         System.out.println("\nSYMBOL TABLE");
         for (Map.Entry<String, Symbol> entry: SYMTAB.entrySet())
             System.out.println(entry.getKey() + "\t" + entry.getValue());
@@ -199,6 +203,8 @@ public class pass1 {
         for (HashMap<String, Integer> LIT : LPs)
             for (Map.Entry<String, Integer> entry: LIT.entrySet())
                 System.out.println(entry.getKey() + "\t" + entry.getValue());
+        System.out.println("\nPOOL TABLE");
+        System.out.println(POOLTAB);
         codeReader.close();
         interWriter.close();
     }
