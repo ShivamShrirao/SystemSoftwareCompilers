@@ -2,6 +2,7 @@ package passes;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -73,8 +74,9 @@ public class pass1 {
         CONDITIONS.put("GE", 5);
         CONDITIONS.put("ANY", 6);
 
-        BufferedReader codeReader = new BufferedReader(new FileReader("assembly.txt"));
+        BufferedReader codeReader = new BufferedReader(new FileReader("assembly3.txt"));
         BufferedWriter interWriter = new BufferedWriter(new FileWriter("intermediate.txt"));
+        BufferedWriter mcodeWriter = new BufferedWriter(new FileWriter("machinecode.txt"));
 
         HashMap<String, Symbol> SYMTAB = new HashMap<>();
         HashMap<String, Integer> LITAB = new HashMap<>();
@@ -87,14 +89,19 @@ public class pass1 {
         while ((currentLine = codeReader.readLine()) != null) {
             loc_cntr++;                     // increase in loop
             currentLine = currentLine.replace(',', ' ');  // replace ',' with space to split
-            String[] tokens = currentLine.split("\\s+");              // split by one or more space
-            if (tokens.length > 0) {
+            String[] tokens_spl = currentLine.split("\\s+");              // split by one or more space
+            ArrayList<String> tokens = new ArrayList<>();
+            for (String tok : tokens_spl) {
+                if (tok.length()>0)
+                    tokens.add(tok);
+            }
+            if (tokens.size() > 0) {
                 int tokenIdx = 0;           // to keep track of index of operation name
                 // if operation not found then first should be a symbol
-                if(OPTAB.get(tokens[tokenIdx])==null) {
-                    Symbol symb = SYMTAB.get(tokens[tokenIdx]);              // check if symbol already exists
+                if(OPTAB.get(tokens.get(tokenIdx))==null) {
+                    Symbol symb = SYMTAB.get(tokens.get(tokenIdx));              // check if symbol already exists
                     if (symb==null) {       // add new symbol with addr loc_cntr
-                        SYMTAB.put(tokens[tokenIdx], new Symbol(SYMTAB.size()+1, loc_cntr, 1));
+                        SYMTAB.put(tokens.get(tokenIdx), new Symbol(SYMTAB.size()+1, loc_cntr, 1));
                     }
                     else {                  // if it exists
                         if (symb.addr == null)          // if address is empty, update the address
@@ -102,18 +109,19 @@ public class pass1 {
                     }
                     tokenIdx++;             // point to next as operation name
                 }
-                switch (OPTAB.get(tokens[tokenIdx]).cls) {       // process according to class
+                switch (OPTAB.get(tokens.get(tokenIdx)).cls) {       // process according to class
                     case "IS" -> {
                         // it can have 2 parameters
                         Integer arg1 = null;
                         String arg2 = null;
-                        interWriter.write(loc_cntr+"\t"+OPTAB.get(tokens[tokenIdx]));
-                        if(!tokens[tokenIdx].equals("STOP")) {       // if not STOP, cause STOP has no parameters
-                            arg1 = REGISTERS.get(tokens[tokenIdx+1]);
+                        interWriter.write(loc_cntr+"\t"+OPTAB.get(tokens.get(tokenIdx)));
+                        mcodeWriter.write(loc_cntr+"\t"+OPTAB.get(tokens.get(tokenIdx)).opCode);
+                        if(!tokens.get(tokenIdx).equals("STOP")) {       // if not STOP, cause STOP has no parameters
+                            arg1 = REGISTERS.get(tokens.get(tokenIdx + 1));
                             if(arg1==null)
-                                arg1 = CONDITIONS.get(tokens[tokenIdx+1]);
+                                arg1 = CONDITIONS.get(tokens.get(tokenIdx + 1));
                             try{
-                                arg2 = tokens[tokenIdx+2];
+                                arg2 = tokens.get(tokenIdx + 2);
                             }
                             catch (ArrayIndexOutOfBoundsException e) {
                                 arg2=null;
@@ -134,20 +142,25 @@ public class pass1 {
                         }
                         if(arg1!=null){
                             interWriter.write("\t"+arg1);
-                            if(arg2!=null)
-                                interWriter.write("\t"+arg2);
+                            mcodeWriter.write("\t"+arg1);
+                            if(arg2!=null) {
+                                interWriter.write("\t" + arg2);
+                                mcodeWriter.write("\t" + arg2);
+                            }
                         }
                         interWriter.write("\n");
+                        mcodeWriter.write("\n");
                     }
                     case "AD" -> {
-                        switch (tokens[tokenIdx]) {
+                        switch (tokens.get(tokenIdx)) {
                             case "START" -> {               // update loc counter for start.
-                                loc_cntr = Integer.parseInt(tokens[tokenIdx + 1]);
+                                loc_cntr = Integer.parseInt(tokens.get(tokenIdx + 1));
                                 interWriter.write("\tAD,1\t\tC,"+loc_cntr+"\n");
+                                mcodeWriter.write("\n");
                                 loc_cntr--;
                             }
                             case "ORIGIN" -> {              // update loc counter
-                                String operand = tokens[tokenIdx + 1];
+                                String operand = tokens.get(tokenIdx + 1);
                                 String[] osp = operand.split("[\\W]");  // split by non alphanumeric
                                 String arg1 = osp[0];
                                 String wtxt = arg1;
@@ -169,6 +182,7 @@ public class pass1 {
                                     }
                                 }
                                 interWriter.write("\tAD,3\t\t"+ wtxt +"\n");
+                                mcodeWriter.write("\n");
                                 loc_cntr--;
                             }
                             case "LTORG", "END" -> {
@@ -180,7 +194,9 @@ public class pass1 {
                                     if(entry.getValue()==null) {
                                         loc_cntr++;
                                         entry.setValue(loc_cntr);
-                                        interWriter.write(loc_cntr+"\tAD,"+OPTAB.get(tokens[tokenIdx]).opCode+"\t\t"+entry.getKey().replaceAll("[^\\d]","")+"\n");
+                                        String literal = entry.getKey().replaceAll("[^\\d]","");
+                                        interWriter.write(loc_cntr+"\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\t"+literal+"\n");
+                                        mcodeWriter.write(loc_cntr+"\t00\t0\t"+literal+"\n");
                                     }
                                 }
                                 // new literal table for next instructions/pool
@@ -191,14 +207,16 @@ public class pass1 {
                             }
                             case "EQU" -> {
                                 // set value of symbol from other symbol
-                                SYMTAB.put(tokens[tokenIdx-1], SYMTAB.get(tokens[tokenIdx+1]));
-                                interWriter.write("\tAD,"+OPTAB.get(tokens[tokenIdx]).opCode+"\t\tS,"+SYMTAB.get(tokens[tokenIdx+1]).idx+"\n");
+                                SYMTAB.put(tokens.get(tokenIdx - 1), SYMTAB.get(tokens.get(tokenIdx + 1)));
+                                interWriter.write("\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tS,"+SYMTAB.get(tokens.get(tokenIdx + 1)).idx+"\n");
+                                mcodeWriter.write("\n");
                                 loc_cntr--;
                             }
                         }
                     }
                     case "DL" -> {
-                        interWriter.write(loc_cntr+"\tDL,"+OPTAB.get(tokens[tokenIdx]).opCode+"\t\tC,1\n");
+                        interWriter.write(loc_cntr+"\tDL,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tC,1\n");
+                        mcodeWriter.write(loc_cntr+"\n");
                     }
                 }
             }
@@ -215,5 +233,6 @@ public class pass1 {
         System.out.println(POOLTAB);
         codeReader.close();
         interWriter.close();
+        mcodeWriter.close();
     }
 }
