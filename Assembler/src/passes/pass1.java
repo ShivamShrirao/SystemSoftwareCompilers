@@ -2,9 +2,9 @@ package passes;
 
 import java.io.*;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 class Operator {
     String cls;
@@ -34,13 +34,53 @@ class Symbol {
 
     @Override
     public String toString() {
-        return addr+"\t"+length;
+        return String.format("%03d", addr);
+    }
+}
+
+class Literal {
+    Integer idx;
+    Integer addr;
+
+    public Literal(Integer idx, Integer addr) {
+        this.idx = idx;
+        this.addr = addr;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("%03d", addr);
+    }
+}
+
+class Mcode {
+    Integer loc;
+    Integer opCode;
+    Integer arg1;
+    Object arg2;
+
+    public Mcode(Integer loc, Integer opCode, Integer arg1, Object arg2) {
+        this.loc = loc;
+        this.opCode = opCode;
+        this.arg1 = arg1;
+        this.arg2 = arg2;
+    }
+
+    public Mcode() {
+    }
+
+    @Override
+    public String toString() {
+        return Objects.toString(loc, "") + "\t\t" +
+                String.format("%02d", opCode) + "\t" +
+                String.format("%02d", arg1).replace("null","") + "\t" +
+                String.format("%3s", arg2).replace(" ", "0").replace("null","");
     }
 }
 
 public class pass1 {
     public static void main(String[] args) throws IOException {
-        HashMap<String, Operator> OPTAB = new HashMap<String, Operator>();
+        HashMap<String, Operator> OPTAB = new HashMap<>();
         OPTAB.put("STOP", new Operator("IS",0));
         OPTAB.put("ADD", new Operator("IS",1));
         OPTAB.put("SUB", new Operator("IS",2));
@@ -74,13 +114,14 @@ public class pass1 {
         CONDITIONS.put("GE", 5);
         CONDITIONS.put("ANY", 6);
 
-        BufferedReader codeReader = new BufferedReader(new FileReader("assembly3.txt"));
+        BufferedReader codeReader = new BufferedReader(new FileReader("assembly.txt"));
         BufferedWriter interWriter = new BufferedWriter(new FileWriter("intermediate.txt"));
         BufferedWriter mcodeWriter = new BufferedWriter(new FileWriter("machinecode.txt"));
 
+        ArrayList<Mcode> mcodeList = new ArrayList<>();
         HashMap<String, Symbol> SYMTAB = new HashMap<>();
-        HashMap<String, Integer> LITAB = new HashMap<>();
-        ArrayList<HashMap<String, Integer>> LPs= new ArrayList<>();
+        HashMap<String, Literal> LITAB = new HashMap<>();
+        ArrayList<HashMap<String, Literal>> LPs= new ArrayList<>();
         ArrayList<Integer> POOLTAB = new ArrayList<>();
         POOLTAB.add(1);
         int loc_cntr=0, litIdx=0;
@@ -114,8 +155,8 @@ public class pass1 {
                         // it can have 2 parameters
                         Integer arg1 = null;
                         String arg2 = null;
-                        interWriter.write(loc_cntr+"\t"+OPTAB.get(tokens.get(tokenIdx)));
-                        mcodeWriter.write(loc_cntr+"\t"+OPTAB.get(tokens.get(tokenIdx)).opCode);
+                        interWriter.write(loc_cntr+"\t\t"+OPTAB.get(tokens.get(tokenIdx)));
+                        Mcode mcodeobj = new Mcode(loc_cntr, OPTAB.get(tokens.get(tokenIdx)).opCode, 0, 0);
                         if(!tokens.get(tokenIdx).equals("STOP")) {       // if not STOP, cause STOP has no parameters
                             arg1 = REGISTERS.get(tokens.get(tokenIdx + 1));
                             if(arg1==null)
@@ -129,34 +170,35 @@ public class pass1 {
                             if(arg2!=null){
                                 if(arg2.contains("=")) {            // it's a literal
                                     litIdx++;
-                                    LITAB.put(arg2, null);
+                                    Literal litobj = new Literal(litIdx,null);
+                                    LITAB.put(arg2, litobj);
                                     arg2 = "L,"+litIdx;
+                                    mcodeobj.arg2 = litobj;
                                 }
                                 else {                              // else a symbol
                                     if(SYMTAB.get(arg2)==null){     // if it's not in symbol table
                                         SYMTAB.put(arg2, new Symbol(SYMTAB.size()+1, null, 1));
                                     }
-                                    arg2 = "S,"+SYMTAB.get(arg2).idx;// for intermediate code.
+                                    Symbol symbobj = SYMTAB.get(arg2);
+                                    mcodeobj.arg2 = symbobj;
+                                    arg2 = "S,"+symbobj.idx;// for intermediate code.
                                 }
                             }
                         }
                         if(arg1!=null){
                             interWriter.write("\t"+arg1);
-                            mcodeWriter.write("\t"+arg1);
-                            if(arg2!=null) {
+                            mcodeobj.arg1 = arg1;
+                            if(arg2!=null)
                                 interWriter.write("\t" + arg2);
-                                mcodeWriter.write("\t" + arg2);
-                            }
                         }
                         interWriter.write("\n");
-                        mcodeWriter.write("\n");
+                        mcodeList.add(mcodeobj);
                     }
                     case "AD" -> {
                         switch (tokens.get(tokenIdx)) {
                             case "START" -> {               // update loc counter for start.
                                 loc_cntr = Integer.parseInt(tokens.get(tokenIdx + 1));
-                                interWriter.write("\tAD,1\t\tC,"+loc_cntr+"\n");
-                                mcodeWriter.write("\n");
+                                interWriter.write("\t\tAD,1\t\tC,"+loc_cntr+"\n");
                                 loc_cntr--;
                             }
                             case "ORIGIN" -> {              // update loc counter
@@ -181,56 +223,67 @@ public class pass1 {
                                         wtxt += " -" + osp[1];
                                     }
                                 }
-                                interWriter.write("\tAD,3\t\t"+ wtxt +"\n");
-                                mcodeWriter.write("\n");
-                                loc_cntr--;
+                                interWriter.write("\t\tAD,3\t\t"+ wtxt +"\n");
+                                mcodeList.add(new Mcode(null, 3, null, loc_cntr));
+                                loc_cntr--;                         // decreased because it's increased later at start of loop
                             }
                             case "LTORG", "END" -> {
                                 if (LITAB.size()>0){
-                                    loc_cntr--;
+                                    loc_cntr--;         // decrement because incremented later.
                                 }
                                 // iterate through literal table and assign address
-                                for (Map.Entry<String, Integer> entry: LITAB.entrySet()) {
-                                    if(entry.getValue()==null) {
+                                for (Map.Entry<String, Literal> entry: LITAB.entrySet()) {
+                                    if(entry.getValue().addr==null) {
                                         loc_cntr++;
-                                        entry.setValue(loc_cntr);
+                                        entry.getValue().addr = loc_cntr;
                                         String literal = entry.getKey().replaceAll("[^\\d]","");
-                                        interWriter.write(loc_cntr+"\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\t"+literal+"\n");
-                                        mcodeWriter.write(loc_cntr+"\t00\t0\t"+literal+"\n");
+                                        interWriter.write(loc_cntr+"\t\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\t"+literal+"\n");
+                                        mcodeList.add(new Mcode(loc_cntr, 0, 0, literal));
                                     }
                                 }
                                 // new literal table for next instructions/pool
                                 LPs.add(LITAB);
-                                LITAB = new HashMap<String, Integer>();
+                                LITAB = new HashMap<>();
                                 // update pool table
                                 POOLTAB.add(litIdx+1);
                             }
                             case "EQU" -> {
+                                Symbol dest = SYMTAB.get(tokens.get(tokenIdx - 1));
+                                Symbol source = SYMTAB.get(tokens.get(tokenIdx + 1));
                                 // set value of symbol from other symbol
-                                SYMTAB.put(tokens.get(tokenIdx - 1), SYMTAB.get(tokens.get(tokenIdx + 1)));
-                                interWriter.write("\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tS,"+SYMTAB.get(tokens.get(tokenIdx + 1)).idx+"\n");
-                                mcodeWriter.write("\n");
+                                dest.addr = source.addr;
+                                interWriter.write("\t\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tS,"+source.idx+"\n");
+                                mcodeList.add(new Mcode(null, OPTAB.get(tokens.get(tokenIdx)).opCode, null, source.addr));
                                 loc_cntr--;
                             }
                         }
                     }
                     case "DL" -> {
-                        interWriter.write(loc_cntr+"\tDL,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tC,1\n");
-                        mcodeWriter.write(loc_cntr+"\n");
+                        interWriter.write(loc_cntr+"\t\tDL,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tC,"+tokens.get(tokenIdx+1)+"\n");
+                        mcodeList.add(new Mcode(loc_cntr, OPTAB.get(tokens.get(tokenIdx)).opCode, null, tokens.get(tokenIdx+1)));
                     }
                 }
             }
         }
         POOLTAB.remove(POOLTAB.size()-1);
+
         System.out.println("\nSYMBOL TABLE");
         for (Map.Entry<String, Symbol> entry: SYMTAB.entrySet())
-            System.out.println(entry.getKey() + "\t" + entry.getValue());
+            System.out.println(entry.getKey() + "\t" + entry.getValue().addr + "\t" + entry.getValue().length);
+
         System.out.println("\nLITERAL TABLE");
-        for (HashMap<String, Integer> LIT : LPs)
-            for (Map.Entry<String, Integer> entry: LIT.entrySet())
+        for (HashMap<String, Literal> LIT : LPs)
+            for (Map.Entry<String, Literal> entry: LIT.entrySet())
                 System.out.println(entry.getKey() + "\t" + entry.getValue());
+
         System.out.println("\nPOOL TABLE");
         System.out.println(POOLTAB);
+
+        // generate final machine code
+        for (Mcode mc : mcodeList){
+            mcodeWriter.write(mc.toString()+"\n");
+        }
+
         codeReader.close();
         interWriter.close();
         mcodeWriter.close();
