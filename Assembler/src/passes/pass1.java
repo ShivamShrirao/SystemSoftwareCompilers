@@ -81,49 +81,54 @@ public class pass1 {
         ArrayList<HashMap<String, Integer>> LPs= new ArrayList<>();
         ArrayList<Integer> POOLTAB = new ArrayList<>();
         POOLTAB.add(1);
-        int loc_cntr=0, symIdx=0, litIdx=0;
+        int loc_cntr=0, litIdx=0;
         String currentLine;
+        // read till EOF
         while ((currentLine = codeReader.readLine()) != null) {
-            loc_cntr++;
-            currentLine = currentLine.replace(',', ' ');
-            String[] split = currentLine.split("\\s+");
-            if (split.length > 0) {
-                int tokenIdx = 0;
-                if(OPTAB.get(split[tokenIdx])==null) {
-                    Symbol symb = SYMTAB.get(split[tokenIdx]);
-                    if (symb==null) {
-                        symIdx++;
-                        SYMTAB.put(split[tokenIdx], new Symbol(symIdx, loc_cntr, 1));
+            loc_cntr++;                     // increase in loop
+            currentLine = currentLine.replace(',', ' ');  // replace ',' with space to split
+            String[] tokens = currentLine.split("\\s+");              // split by one or more space
+            if (tokens.length > 0) {
+                int tokenIdx = 0;           // to keep track of index of operation name
+                // if operation not found then first should be a symbol
+                if(OPTAB.get(tokens[tokenIdx])==null) {
+                    Symbol symb = SYMTAB.get(tokens[tokenIdx]);              // check if symbol already exists
+                    if (symb==null) {       // add new symbol with addr loc_cntr
+                        SYMTAB.put(tokens[tokenIdx], new Symbol(SYMTAB.size()+1, loc_cntr, 1));
                     }
-                    else {
-                        if (symb.addr == null)
+                    else {                  // if it exists
+                        if (symb.addr == null)          // if address is empty, update the address
                             symb.addr = loc_cntr;
                     }
-                    tokenIdx++;
+                    tokenIdx++;             // point to next as operation name
                 }
-                switch (OPTAB.get(split[tokenIdx]).cls) {
+                switch (OPTAB.get(tokens[tokenIdx]).cls) {       // process according to class
                     case "IS" -> {
+                        // it can have 2 parameters
                         Integer arg1 = null;
                         String arg2 = null;
-                        interWriter.write(loc_cntr+"\t"+OPTAB.get(split[tokenIdx]));
-                        if(!split[tokenIdx].equals("STOP")) {
-                            arg1 = REGISTERS.get(split[tokenIdx+1]);
+                        interWriter.write(loc_cntr+"\t"+OPTAB.get(tokens[tokenIdx]));
+                        if(!tokens[tokenIdx].equals("STOP")) {       // if not STOP, cause STOP has no parameters
+                            arg1 = REGISTERS.get(tokens[tokenIdx+1]);
                             if(arg1==null)
-                                arg1 = CONDITIONS.get(split[tokenIdx+1]);
-
-                            arg2 = split[tokenIdx+2];
+                                arg1 = CONDITIONS.get(tokens[tokenIdx+1]);
+                            try{
+                                arg2 = tokens[tokenIdx+2];
+                            }
+                            catch (ArrayIndexOutOfBoundsException e) {
+                                arg2=null;
+                            }
                             if(arg2!=null){
-                                if(arg2.contains("=")) {
+                                if(arg2.contains("=")) {            // it's a literal
                                     litIdx++;
                                     LITAB.put(arg2, null);
                                     arg2 = "L,"+litIdx;
                                 }
-                                else {
-                                    if(SYMTAB.get(arg2)==null){
-                                        symIdx++;
-                                        SYMTAB.put(arg2, new Symbol(symIdx, null, 1));
+                                else {                              // else a symbol
+                                    if(SYMTAB.get(arg2)==null){     // if it's not in symbol table
+                                        SYMTAB.put(arg2, new Symbol(SYMTAB.size()+1, null, 1));
                                     }
-                                    arg2 = "S,"+SYMTAB.get(arg2).idx;
+                                    arg2 = "S,"+SYMTAB.get(arg2).idx;// for intermediate code.
                                 }
                             }
                         }
@@ -135,25 +140,25 @@ public class pass1 {
                         interWriter.write("\n");
                     }
                     case "AD" -> {
-                        switch (split[tokenIdx]) {
-                            case "START" -> {
-                                loc_cntr = Integer.parseInt(split[tokenIdx + 1]);
+                        switch (tokens[tokenIdx]) {
+                            case "START" -> {               // update loc counter for start.
+                                loc_cntr = Integer.parseInt(tokens[tokenIdx + 1]);
                                 interWriter.write("\tAD,1\t\tC,"+loc_cntr+"\n");
                                 loc_cntr--;
                             }
-                            case "ORIGIN" -> {
-                                String operand = split[tokenIdx + 1];
-                                String[] osp = operand.split("[\\W]");
+                            case "ORIGIN" -> {              // update loc counter
+                                String operand = tokens[tokenIdx + 1];
+                                String[] osp = operand.split("[\\W]");  // split by non alphanumeric
                                 String arg1 = osp[0];
                                 String wtxt = arg1;
-                                Symbol val = SYMTAB.get(arg1);
-                                if (val==null)
+                                Symbol val = SYMTAB.get(arg1);      // check if argument is a symbol
+                                if (val==null)                      // if not symbol then set loc_cntr
                                     loc_cntr = Integer.parseInt(arg1);
-                                else {
+                                else {                              // set address of symbol if it's symbol
                                     loc_cntr = val.addr;
                                     wtxt = "S," + val.idx;
                                 }
-                                if (osp.length>1) {
+                                if (osp.length>1) {                 // check if something is added or subtracted from address
                                     if(operand.contains("+")) {
                                         loc_cntr += Integer.parseInt(osp[1]);
                                         wtxt += " +"+osp[1];
@@ -170,27 +175,30 @@ public class pass1 {
                                 if (LITAB.size()>0){
                                     loc_cntr--;
                                 }
+                                // iterate through literal table and assign address
                                 for (Map.Entry<String, Integer> entry: LITAB.entrySet()) {
                                     if(entry.getValue()==null) {
                                         loc_cntr++;
                                         entry.setValue(loc_cntr);
-                                        interWriter.write(loc_cntr+"\tAD,"+OPTAB.get(split[tokenIdx]).opCode+"\t\t"+entry.getKey().replaceAll("[^\\d]","")+"\n");
+                                        interWriter.write(loc_cntr+"\tAD,"+OPTAB.get(tokens[tokenIdx]).opCode+"\t\t"+entry.getKey().replaceAll("[^\\d]","")+"\n");
                                     }
                                 }
+                                // new literal table for next instructions/pool
                                 LPs.add(LITAB);
-                                POOLTAB.add(litIdx+1);
                                 LITAB = new HashMap<String, Integer>();
+                                // update pool table
+                                POOLTAB.add(litIdx+1);
                             }
                             case "EQU" -> {
-                                SYMTAB.put(split[tokenIdx-1], SYMTAB.get(split[tokenIdx+1]));
-                                symIdx++;
-                                interWriter.write("\tAD,"+OPTAB.get(split[tokenIdx]).opCode+"\t\tS,"+SYMTAB.get(split[tokenIdx+1]).idx+"\n");
+                                // set value of symbol from other symbol
+                                SYMTAB.put(tokens[tokenIdx-1], SYMTAB.get(tokens[tokenIdx+1]));
+                                interWriter.write("\tAD,"+OPTAB.get(tokens[tokenIdx]).opCode+"\t\tS,"+SYMTAB.get(tokens[tokenIdx+1]).idx+"\n");
                                 loc_cntr--;
                             }
                         }
                     }
                     case "DL" -> {
-                        interWriter.write(loc_cntr+"\tDL,"+OPTAB.get(split[tokenIdx]).opCode+"\t\tC,1\n");
+                        interWriter.write(loc_cntr+"\tDL,"+OPTAB.get(tokens[tokenIdx]).opCode+"\t\tC,1\n");
                     }
                 }
             }
