@@ -78,7 +78,8 @@ class Mcode {
     }
 }
 
-public class pass1 {
+// TODO - Error handling.
+public class assemble {
     public static void main(String[] args) throws IOException {
         HashMap<String, Operator> OPTAB = new HashMap<>();
         OPTAB.put("STOP", new Operator("IS",0));
@@ -177,6 +178,7 @@ public class pass1 {
                                 }
                                 else {                              // else a symbol
                                     if(SYMTAB.get(arg2)==null){     // if it's not in symbol table
+                                        // TODO - Use a list to keep indexing order
                                         SYMTAB.put(arg2, new Symbol(SYMTAB.size()+1, null, 1));
                                     }
                                     Symbol symbobj = SYMTAB.get(arg2);
@@ -232,6 +234,7 @@ public class pass1 {
                                     loc_cntr--;         // decrement because incremented later.
                                 }
                                 // iterate through literal table and assign address
+                                // TODO - check order of add and index for pass2.
                                 for (Map.Entry<String, Literal> entry: LITAB.entrySet()) {
                                     if(entry.getValue().addr==null) {
                                         loc_cntr++;
