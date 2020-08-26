@@ -1,10 +1,7 @@
 package passes;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 class Operator {
     String cls;
@@ -21,15 +18,37 @@ class Operator {
     }
 }
 
+class Globals {
+    public static boolean undefined_sym = false;
+}
+
 class Symbol {
     Integer idx;
     Integer addr;
     Integer length;
+    String name;
+    String line;
+    Integer line_num;
+    boolean errored = false;
 
-    public Symbol(Integer idx, Integer addr, Integer length) {
+    public Symbol(Integer idx, Integer addr, Integer length, String name, String line, Integer line_num) {
         this.idx = idx;
         this.addr = addr;
         this.length = length;
+        this.name = name;
+        this.line = line;
+        this.line_num = line_num;
+    }
+
+    public void checkDef(){
+        if(addr==null) {
+            if(!errored) {
+                System.out.println(line_num+". "+line);
+                System.out.println("** ERROR ** UNDEFINED SYM '" + name + "' IN OPERAND FIELD at line "+line_num);
+                Globals.undefined_sym = true;
+                errored = true;
+            }
+        }
     }
 
     @Override
@@ -66,11 +85,11 @@ class Mcode {
         this.arg2 = arg2;
     }
 
-    public Mcode() {
-    }
-
     @Override
     public String toString() {
+        if(arg2 instanceof Symbol){
+            ((Symbol) arg2).checkDef();
+        }
         return Objects.toString(loc, "") + "\t\t" +
                 String.format("%02d", opCode) + "\t" +
                 String.format("%02d", arg1).replace("null","") + "\t" +
@@ -78,7 +97,6 @@ class Mcode {
     }
 }
 
-// TODO - Error handling.
 public class assemble {
     public static void main(String[] args) throws IOException {
         HashMap<String, Operator> OPTAB = new HashMap<>();
@@ -101,13 +119,13 @@ public class assemble {
         OPTAB.put("EQU", new Operator("AD",4));
         OPTAB.put("LTORG", new Operator("AD",5));
 
-        HashMap<String, Integer> REGISTERS = new HashMap<String, Integer>();
+        HashMap<String, Integer> REGISTERS = new HashMap<>();
         REGISTERS.put("AREG", 1);
         REGISTERS.put("BREG", 2);
         REGISTERS.put("CREG", 3);
         REGISTERS.put("DREG", 4);
 
-        HashMap<String, Integer> CONDITIONS = new HashMap<String, Integer>();
+        HashMap<String, Integer> CONDITIONS = new HashMap<>();
         CONDITIONS.put("LT", 1);
         CONDITIONS.put("LE", 2);
         CONDITIONS.put("EQ", 3);
@@ -120,17 +138,21 @@ public class assemble {
         BufferedWriter mcodeWriter = new BufferedWriter(new FileWriter("machinecode.txt"));
 
         ArrayList<Mcode> mcodeList = new ArrayList<>();
-        HashMap<String, Symbol> SYMTAB = new HashMap<>();
-        HashMap<String, Literal> LITAB = new HashMap<>();
-        ArrayList<HashMap<String, Literal>> LPs= new ArrayList<>();
+        LinkedHashMap<String, Symbol> SYMTAB = new LinkedHashMap<>();
+        LinkedHashMap<String, Literal> LITAB = new LinkedHashMap<>();
+        ArrayList<LinkedHashMap<String, Literal>> LPs= new ArrayList<>();
         ArrayList<Integer> POOLTAB = new ArrayList<>();
         POOLTAB.add(1);
-        int loc_cntr=0, litIdx=0;
-        String currentLine;
+        int loc_cntr=0, litIdx=0, line_num=0;
+        boolean errored=false, duplicate_def=false;
+        String currentLineO;
         // read till EOF
-        while ((currentLine = codeReader.readLine()) != null) {
+        while ((currentLineO = codeReader.readLine()) != null) {
+            line_num++;
+            if (currentLineO.startsWith("#"))       // '#' is a comment
+                continue;
             loc_cntr++;                     // increase in loop
-            currentLine = currentLine.replace(',', ' ');  // replace ',' with space to split
+            String currentLine = currentLineO.replace(',', ' ');  // replace ',' with space to split
             String[] tokens_spl = currentLine.split("\\s+");              // split by one or more space
             ArrayList<String> tokens = new ArrayList<>();
             for (String tok : tokens_spl) {
@@ -143,21 +165,32 @@ public class assemble {
                 if(OPTAB.get(tokens.get(tokenIdx))==null) {
                     Symbol symb = SYMTAB.get(tokens.get(tokenIdx));              // check if symbol already exists
                     if (symb==null) {       // add new symbol with addr loc_cntr
-                        SYMTAB.put(tokens.get(tokenIdx), new Symbol(SYMTAB.size()+1, loc_cntr, 1));
+                        SYMTAB.put(tokens.get(tokenIdx), new Symbol(SYMTAB.size()+1, loc_cntr, 1, tokens.get(tokenIdx), currentLineO, line_num));
                     }
                     else {                  // if it exists
-                        if (symb.addr == null)          // if address is empty, update the address
+                        if (symb.addr == null) {          // if address is empty, update the address
                             symb.addr = loc_cntr;
+                            duplicate_def = false;
+                        }
+                        else
+                            duplicate_def = true;
                     }
                     tokenIdx++;             // point to next as operation name
                 }
-                switch (OPTAB.get(tokens.get(tokenIdx)).cls) {       // process according to class
+                Operator currentOperator = OPTAB.get(tokens.get(tokenIdx));
+                if(currentOperator==null){
+                    System.out.println(line_num+". "+currentLineO);
+                    System.out.println("**ERROR ** INVALID OPCODE at line "+line_num);
+                    errored = true;
+                    continue;
+                }
+                switch (currentOperator.cls) {       // process according to class
                     case "IS" -> {
                         // it can have 2 parameters
                         Integer arg1 = null;
                         String arg2 = null;
-                        interWriter.write(loc_cntr+"\t\t"+OPTAB.get(tokens.get(tokenIdx)));
-                        Mcode mcodeobj = new Mcode(loc_cntr, OPTAB.get(tokens.get(tokenIdx)).opCode, 0, 0);
+                        interWriter.write(loc_cntr+"\t\t"+currentOperator);
+                        Mcode mcodeobj = new Mcode(loc_cntr, currentOperator.opCode, 0, 0);
                         if(!tokens.get(tokenIdx).equals("STOP")) {       // if not STOP, cause STOP has no parameters
                             arg1 = REGISTERS.get(tokens.get(tokenIdx + 1));
                             if(arg1==null)
@@ -178,8 +211,7 @@ public class assemble {
                                 }
                                 else {                              // else a symbol
                                     if(SYMTAB.get(arg2)==null){     // if it's not in symbol table
-                                        // TODO - Use a list to keep indexing order
-                                        SYMTAB.put(arg2, new Symbol(SYMTAB.size()+1, null, 1));
+                                        SYMTAB.put(arg2, new Symbol(SYMTAB.size()+1, null, 1, arg2, currentLineO, line_num));
                                     }
                                     Symbol symbobj = SYMTAB.get(arg2);
                                     mcodeobj.arg2 = symbobj;
@@ -234,19 +266,18 @@ public class assemble {
                                     loc_cntr--;         // decrement because incremented later.
                                 }
                                 // iterate through literal table and assign address
-                                // TODO - check order of add and index for pass2.
                                 for (Map.Entry<String, Literal> entry: LITAB.entrySet()) {
                                     if(entry.getValue().addr==null) {
                                         loc_cntr++;
                                         entry.getValue().addr = loc_cntr;
                                         String literal = entry.getKey().replaceAll("[^\\d]","");
-                                        interWriter.write(loc_cntr+"\t\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\t"+literal+"\n");
+                                        interWriter.write(loc_cntr+"\t\tAD,"+currentOperator.opCode+"\t\t"+literal+"\n");
                                         mcodeList.add(new Mcode(loc_cntr, 0, 0, literal));
                                     }
                                 }
                                 // new literal table for next instructions/pool
                                 LPs.add(LITAB);
-                                LITAB = new HashMap<>();
+                                LITAB = new LinkedHashMap<>();
                                 // update pool table
                                 POOLTAB.add(litIdx+1);
                             }
@@ -255,40 +286,48 @@ public class assemble {
                                 Symbol source = SYMTAB.get(tokens.get(tokenIdx + 1));
                                 // set value of symbol from other symbol
                                 dest.addr = source.addr;
-                                interWriter.write("\t\tAD,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tS,"+source.idx+"\n");
-                                mcodeList.add(new Mcode(null, OPTAB.get(tokens.get(tokenIdx)).opCode, null, source.addr));
+                                interWriter.write("\t\tAD,"+currentOperator.opCode+"\t\tS,"+source.idx+"\n");
+                                mcodeList.add(new Mcode(null, currentOperator.opCode, null, source.addr));
                                 loc_cntr--;
                             }
                         }
                     }
                     case "DL" -> {
-                        interWriter.write(loc_cntr+"\t\tDL,"+OPTAB.get(tokens.get(tokenIdx)).opCode+"\t\tC,"+tokens.get(tokenIdx+1)+"\n");
-                        mcodeList.add(new Mcode(loc_cntr, OPTAB.get(tokens.get(tokenIdx)).opCode, null, tokens.get(tokenIdx+1)));
+                        if(duplicate_def) {
+                            System.out.println(line_num+". "+currentLineO);
+                            System.out.println("** ERROR ** DUPLICATE DEFINITION OF SYM '"+tokens.get(tokenIdx-1)+"' at line "+line_num);
+                            errored = true;
+                        }
+                        interWriter.write(loc_cntr+"\t\tDL,"+currentOperator.opCode+"\t\tC,"+tokens.get(tokenIdx+1)+"\n");
+                        mcodeList.add(new Mcode(loc_cntr, currentOperator.opCode, null, tokens.get(tokenIdx+1)));
                     }
                 }
             }
         }
         POOLTAB.remove(POOLTAB.size()-1);
+        codeReader.close();
 
-        System.out.println("\nSYMBOL TABLE");
-        for (Map.Entry<String, Symbol> entry: SYMTAB.entrySet())
-            System.out.println(entry.getKey() + "\t" + entry.getValue().addr + "\t" + entry.getValue().length);
+        if(!errored){
+            System.out.println("\nSYMBOL TABLE");
+            for (Map.Entry<String, Symbol> entry: SYMTAB.entrySet())
+                System.out.println(entry.getKey() + "\t" + entry.getValue().addr + "\t" + entry.getValue().length);
 
-        System.out.println("\nLITERAL TABLE");
-        for (HashMap<String, Literal> LIT : LPs)
-            for (Map.Entry<String, Literal> entry: LIT.entrySet())
-                System.out.println(entry.getKey() + "\t" + entry.getValue());
+            System.out.println("\nLITERAL TABLE");
+            for (LinkedHashMap<String, Literal> LIT : LPs)
+                for (Map.Entry<String, Literal> entry: LIT.entrySet())
+                    System.out.println(entry.getKey() + "\t" + entry.getValue());
 
-        System.out.println("\nPOOL TABLE");
-        System.out.println(POOLTAB);
+            System.out.println("\nPOOL TABLE");
+            System.out.println(POOLTAB);
+
+            interWriter.close();
+        }
 
         // generate final machine code
         for (Mcode mc : mcodeList){
             mcodeWriter.write(mc.toString()+"\n");
         }
-
-        codeReader.close();
-        interWriter.close();
-        mcodeWriter.close();
+        if(!Globals.undefined_sym)
+            mcodeWriter.close();
     }
 }
