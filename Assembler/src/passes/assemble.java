@@ -98,6 +98,18 @@ class Mcode {
 }
 
 public class assemble {
+
+    static ArrayList<String> to_tokens(String line) {
+        String currentLine = line.replace(',', ' ');       // replace ',' with space to split
+        String[] tokens_spl = currentLine.split("\\s+");              // split by one or more space
+        ArrayList<String> tokens = new ArrayList<>();
+        for (String tok : tokens_spl) {
+            if (tok.length()>0)
+                tokens.add(tok);
+        }
+        return tokens;
+    }
+
     public static void main(String[] args) throws IOException {
         HashMap<String, Operator> OPTAB = new HashMap<>();
         OPTAB.put("STOP", new Operator("IS",0));
@@ -145,27 +157,21 @@ public class assemble {
         POOLTAB.add(1);
         int loc_cntr=0, litIdx=0, line_num=0;
         boolean errored=false, duplicate_def=false;
-        String currentLineO;
+        String currentLine;
         // read till EOF
-        while ((currentLineO = codeReader.readLine()) != null) {
+        while ((currentLine = codeReader.readLine()) != null) {
             line_num++;
-            if (currentLineO.startsWith("#"))       // '#' is a comment
+            if (currentLine.startsWith("#"))       // '#' is a comment
                 continue;
             loc_cntr++;                     // increase in loop
-            String currentLine = currentLineO.replace(',', ' ');  // replace ',' with space to split
-            String[] tokens_spl = currentLine.split("\\s+");              // split by one or more space
-            ArrayList<String> tokens = new ArrayList<>();
-            for (String tok : tokens_spl) {
-                if (tok.length()>0)
-                    tokens.add(tok);
-            }
+            ArrayList<String> tokens = to_tokens(currentLine);
             if (tokens.size() > 0) {
                 int tokenIdx = 0;           // to keep track of index of operation name
                 // if operation not found then first should be a symbol
                 if(OPTAB.get(tokens.get(tokenIdx))==null) {
                     Symbol symb = SYMTAB.get(tokens.get(tokenIdx));              // check if symbol already exists
                     if (symb==null) {       // add new symbol with addr loc_cntr
-                        SYMTAB.put(tokens.get(tokenIdx), new Symbol(SYMTAB.size()+1, loc_cntr, 1, tokens.get(tokenIdx), currentLineO, line_num));
+                        SYMTAB.put(tokens.get(tokenIdx), new Symbol(SYMTAB.size()+1, loc_cntr, 1, tokens.get(tokenIdx), currentLine, line_num));
                     }
                     else {                  // if it exists
                         if (symb.addr == null) {          // if address is empty, update the address
@@ -179,7 +185,7 @@ public class assemble {
                 }
                 Operator currentOperator = OPTAB.get(tokens.get(tokenIdx));
                 if(currentOperator==null){
-                    System.out.println(line_num+". "+currentLineO);
+                    System.out.println(line_num+". "+currentLine);
                     System.out.println("**ERROR ** INVALID OPCODE at line "+line_num);
                     errored = true;
                     continue;
@@ -211,7 +217,7 @@ public class assemble {
                                 }
                                 else {                              // else a symbol
                                     if(SYMTAB.get(arg2)==null){     // if it's not in symbol table
-                                        SYMTAB.put(arg2, new Symbol(SYMTAB.size()+1, null, 1, arg2, currentLineO, line_num));
+                                        SYMTAB.put(arg2, new Symbol(SYMTAB.size()+1, null, 1, arg2, currentLine, line_num));
                                     }
                                     Symbol symbobj = SYMTAB.get(arg2);
                                     mcodeobj.arg2 = symbobj;
@@ -294,7 +300,7 @@ public class assemble {
                     }
                     case "DL" -> {
                         if(duplicate_def) {
-                            System.out.println(line_num+". "+currentLineO);
+                            System.out.println(line_num+". "+currentLine);
                             System.out.println("** ERROR ** DUPLICATE DEFINITION OF SYM '"+tokens.get(tokenIdx-1)+"' at line "+line_num);
                             errored = true;
                         }
