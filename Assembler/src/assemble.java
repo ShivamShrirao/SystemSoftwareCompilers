@@ -1,5 +1,3 @@
-package passes;
-
 import java.io.*;
 import java.util.*;
 
