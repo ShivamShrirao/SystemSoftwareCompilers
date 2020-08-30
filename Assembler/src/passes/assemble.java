@@ -337,3 +337,87 @@ public class assemble {
             mcodeWriter.close();
     }
 }
+
+/*
+assembly.txt ->
+START 200
+	MOVER AREG, ='5'
+	MOVEM AREG, A
+LOOP MOVER AREG, A
+	MOVER CREG, B
+	ADD CREG, ='1'
+	BC ANY, NEXT
+	LTORG
+NEXT SUB AREG, ='1'
+	BC LT, BACK
+LAST STOP
+	ORIGIN LOOP+2
+	MULT CREG, B
+	ORIGIN LAST+1
+	A DS 1
+BACK EQU LOOP
+	B DC 1
+END
+
+
+CONSOLE OUTOUT ->
+SYMBOL TABLE
+A	211	1
+LOOP	202	1
+B	212	1
+NEXT	208	1
+BACK	202	1
+LAST	210	1
+
+LITERAL TABLE
+='5'	206
+='1'	207
+='1'	213
+
+POOL TABLE
+[1, 3]
+
+
+intermediate.txt ->
+		AD,1		C,200
+200		IS,4	1	L,1
+201		IS,5	1	S,1
+202		IS,4	1	S,1
+203		IS,4	3	S,3
+204		IS,1	3	L,2
+205		IS,7	6	S,4
+206		AD,5		5
+207		AD,5		1
+208		IS,2	1	L,3
+209		IS,7	1	S,5
+210		IS,0
+		AD,3		S,2 +2
+204		IS,3	3	S,3
+		AD,3		S,6 +1
+211		DL,2		C,1
+		AD,4		S,2
+212		DL,1		C,1
+213		AD,2		1
+
+
+machinecode.txt - >
+200		04	01	206
+201		05	01	211
+202		04	01	211
+203		04	03	212
+204		01	03	207
+205		07	06	208
+206		00	00	005
+207		00	00	001
+208		02	01	213
+209		07	01	202
+210		00	00	000
+		03		204
+204		03	03	212
+		03		211
+211		02		001
+		04		202
+212		01		001
+213		00	00	001
+
+ */
