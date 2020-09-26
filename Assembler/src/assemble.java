@@ -150,7 +150,7 @@ public class assemble {
         ArrayList<Mcode> mcodeList = new ArrayList<>();
         LinkedHashMap<String, Symbol> SYMTAB = new LinkedHashMap<>();
         LinkedHashMap<String, Literal> LITAB = new LinkedHashMap<>();
-        ArrayList<LinkedHashMap<String, Literal>> LPs= new ArrayList<>();
+        ArrayList<LinkedHashMap<String, Literal>> LPs = new ArrayList<>();
         ArrayList<Integer> POOLTAB = new ArrayList<>();
         POOLTAB.add(1);
         int loc_cntr=0, litIdx=0, line_num=0;
